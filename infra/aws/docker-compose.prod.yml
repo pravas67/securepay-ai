@@ -1,0 +1,37 @@
+# Production stack on a single EC2 instance. The database is Amazon RDS, not a container.
+# Secrets arrive in /opt/securepay/.env, written from AWS Secrets Manager by user-data.sh (mode 600, root-only).
+# Logs go to CloudWatch Logs group /securepay/prod (create it first; see docs/deployment-aws.md).
+services:
+  backend:
+    build: ../../backend
+    image: securepay-backend:prod
+    restart: unless-stopped
+    env_file: /opt/securepay/.env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      AWS_ENABLED: "true"
+      AWS_REGION: ${AWS_REGION}
+    expose:
+      - "8080"
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: /securepay/prod
+        awslogs-stream: backend
+
+  frontend:
+    build: ../../frontend
+    image: securepay-frontend:prod
+    restart: unless-stopped
+    # The ALB forwards HTTPS traffic here; port 80 is open only to the ALB's security group.
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION}
+        awslogs-group: /securepay/prod
+        awslogs-stream: frontend

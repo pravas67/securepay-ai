@@ -1,0 +1,52 @@
+# Local development.
+#   Database only (run backend/frontend from your IDE):  docker compose -f infra/docker-compose.yml up -d --wait
+#   Whole stack in containers (http://localhost:3000):   docker compose -f infra/docker-compose.yml --profile app up -d --build
+services:
+  postgres:
+    image: postgres:16.4
+    container_name: securepay-postgres
+    environment:
+      POSTGRES_DB: securepay
+      POSTGRES_USER: securepay
+      POSTGRES_PASSWORD: securepay_local_dev
+    # 5433 on the host so it doesn't clash with a locally installed Postgres on 5432
+    ports:
+      - "5433:5432"
+    volumes:
+      - securepay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securepay -d securepay"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    profiles: ["app"]
+    build: ../backend
+    image: securepay-backend:local
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/securepay
+      DB_USERNAME: securepay
+      DB_PASSWORD: securepay_local_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Not published to the host: only reachable through the frontend's /api proxy.
+    expose:
+      - "8080"
+
+  frontend:
+    profiles: ["app"]
+    build: ../frontend
+    image: securepay-frontend:local
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  securepay-pgdata:

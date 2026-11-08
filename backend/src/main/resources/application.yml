@@ -1,0 +1,120 @@
+spring:
+  application:
+    name: securepay-ai
+  profiles:
+    # "local" loads demo users and sample data. Deployed environments set SPRING_PROFILES_ACTIVE=prod.
+    default: local
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/securepay}
+    username: ${DB_USERNAME:securepay}
+    password: ${DB_PASSWORD:securepay_local_dev}
+
+  jpa:
+    # Flyway owns the schema; Hibernate only checks that entities match it.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    locations: classpath:db/migration
+
+  ai:
+    openai:
+      # The key lives only on the server. It is never sent to the browser or to the model.
+      api-key: ${OPENAI_API_KEY:not-set}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:gpt-4.1-mini}
+          temperature: 0.2
+
+securepay:
+  auth:
+    jwt-secret: ${JWT_SECRET:}
+    token-ttl: PT30M
+    issuer: securepay-ai
+
+  agent:
+    max-tool-calls: 8
+    memory-messages: 20
+    requests-per-minute: 20
+
+  payments:
+    # sandbox (in-memory, default) or stripe (Stripe TEST mode; live keys are refused at startup)
+    provider: ${PAYMENT_PROVIDER:sandbox}
+    # Hard limits enforced by the backend, whatever the AI or the UI asks for.
+    max-single-amount: '10000.00'
+    rolling-24h-limit: '20000.00'
+    # How long a user has to approve a draft before it expires.
+    approval-ttl: PT10M
+    supported-currencies: INR
+    recovery-interval: PT1M
+
+  stripe:
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    # Stripe's built-in test card; no real card details ever touch this application.
+    test-payment-method: pm_card_visa
+    api-base-url: https://api.stripe.com
+
+  bootstrap:
+    # One-time creation of the first administrator in a fresh (non-local) database. Unset after first start.
+    admin-username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+
+  aws:
+    # Off by default: nothing calls AWS until you opt in. Credentials come from the default AWS chain.
+    enabled: ${AWS_ENABLED:false}
+    region: ${AWS_REGION:ap-south-1}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+securepay:
+  auth:
+    # Local development only. Any other profile must provide JWT_SECRET.
+    jwt-secret: ${JWT_SECRET:local-dev-only-secret-do-not-use-in-prod}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  # No defaults: the app refuses to start if these aren't provided (by AWS Secrets Manager via the env).
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+server:
+  # Behind a load balancer / reverse proxy that terminates TLS.
+  forward-headers-strategy: native
+  error:
+    include-stacktrace: never
+
+logging:
+  structured:
+    # JSON logs, ready for CloudWatch Logs Insights.
+    format:
+      console: ecs
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
